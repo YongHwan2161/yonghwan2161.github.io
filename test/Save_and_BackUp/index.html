@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+</head>
+<body>
+    <label id="clock" style="color: green; display: inline-block;"></label><br />
+    <label id="contents"></label><br/>
+    <textarea id="textinput" cols="60"></textarea>    <button id="myButton" onclick="sendTextToServer()">Enter</button><br />
+    <script>
+        var user = 0;
+        var node = 0;
+        var ch = 0;
+        window.onload = function () {
+            console.log('페이지가 처음 로드되었습니다.');
+            function clock() {
+                document.getElementById("clock").innerHTML = Date();
+            }
+            clock();
+            setInterval(clock, 1000); // 1초마다 실행
+            sendTextToServer();
+        }
+        function sendTextToServer() {
+            var textinput = document.getElementById("textinput").value;
+            var text = user + '\t' + node + '\t' + ch + '\t' + textinput;
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', 'http://122.47.14.7:8000', true);
+            xhr.setRequestHeader('Content-Type', 'text/plain; charset=utf-8');
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState == 4 && xhr.status == 200) {
+                    var res = xhr.responseText.split('\t');
+                    user = res[0];//user
+                    node = res[1];//node
+                    ch = res[2];
+                    var con = document.getElementById("contents");
+                    con.style.display = "inline-block"; // or "table"
+                    con.style.maxWidth = "500px";
+                    con.style.overflowWrap = "break-word";
+                    con.innerHTML = res[3];//sheet
+                }
+            };
+            xhr.send(text);
+        }
+    </script>
+</body>
+</html>
