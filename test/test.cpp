@@ -24,7 +24,7 @@
 #include <glm/gtc/type_ptr.hpp> // glm::value_ptr를 포함하는 헤더
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
+//아아아아?
 using namespace std;
 using uint = unsigned int;
 using ushort = unsigned short;
