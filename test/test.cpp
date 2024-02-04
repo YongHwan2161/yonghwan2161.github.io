@@ -173,6 +173,14 @@ uchar *axis2(uint node, ushort ch)
     uint startRev = startCoo + 4 + sizeCoo;
     return CoRe[node] + startRev + 4;
 }
+uchar *axis3(uint node, ushort ch)
+{
+    uint startCoo = charTouint(CoRe[node] + 6 + 4 * ch);
+    uint sizeCoo = charTouint(CoRe[node] + startCoo);
+    uint startRev = startCoo + 4 + sizeCoo;
+    uint sizeRev = charTouint(CoRe[node] + startRev);
+    return CoRe[node] + startRev + 4 + sizeRev + 4;
+}
 uchar *axis(uint node, ushort ch, ushort axis){
     uint startAxis = charTouint(CoRe[node] + 6 + 4 * ch);
     uint sizeAxis = 0;
@@ -381,6 +389,42 @@ void pushRev2(uint node, ushort ch, uchar *add) // Brain 함수에서만 사용�
     }
     changeInt(CoRe[node], startRev, sizeRev + 12);
 }
+void pushAxis3(uint node, ushort ch, uchar *bitmap)
+{
+    uint startCoo = charTouint(CoRe[node] + 6 + 4 * ch);
+    uint sizeCoo = charTouint(CoRe[node] + startCoo);
+    uint startRev = startCoo + 4 + sizeCoo;
+    uint sizeRev = charTouint(CoRe[node] + startRev);
+    uint startAxis3 = startRev + 4 + sizeRev;
+    uint sizeAxis3 = charTouint(CoRe[node] + startAxis3);
+    uint endPosi = startAxis3 + 4 + sizeAxis3;
+    ushort numCh = charToushort(CoRe[node] + 4);
+    uint startCoo2 = 0;
+    if (ch < numCh - 1)
+    {
+        startCoo2 = charTouint(CoRe[node] + 6 + 4 * (ch + 1));
+    }
+    else
+    {
+        startCoo2 = 4 + charTouint(CoRe[node]);
+    }
+    // uchar *add = uintToBytes(8);
+    // insertArr(node, endPosi, add, 4);
+    uint width = charTouint(CoRe[node] + startAxis3 + 4);
+    uint height = charTouint(CoRe[node] + startAxis3 + 8);
+    changeInt(CoRe[node], startAxis3, 16 + width * height);
+    // insertArr(node, endPosi + 8, bitmap, 4);
+    if (width != 0 && height != 0)
+    {
+        insertArr(node, endPosi + 4, bitmap, width * height);
+    }
+    //insertArr(node, endPosi + 12, bitmap, width * height);
+    for (ushort i = ch + 1; i < numCh; i++)
+    {
+        uint temp = charTouint(CoRe[node] + 6 + 4 * i);
+        changeInt(CoRe[node], 6 + 4 * i, temp + width * height);
+    }
+}
 void insertCoo(uint node, ushort ch, int indexCoo, uchar *add)
 {
     uint startCoo = charTouint(CoRe[node] + 6 + 4 * ch);
@@ -563,17 +607,104 @@ std::string wstringToUtf8(const std::wstring &wstr)
     wcstombs(buffer.data(), wstr.c_str(), buffer.size());
     return std::string(buffer.data());
 }
-struct BitmapGlyphData
-{
-    unsigned char *bitmap; // 비트맵 데이터
-    uint width;            // 비트맵 너비
-    uint height;           // 비트맵 높이
-    glm::ivec2 bearing;    // 비트맵 베어링
-    uint advance;          // 다음 글리프까지의 이동 거리
-};
-std::map<uint32_t, BitmapGlyphData> bitmapGlyphMap;
+// struct BitmapGlyphData
+// {
+//     unsigned char *bitmap; // 비트맵 데이터
+//     uint width;            // 비트맵 너비
+//     uint height;           // 비트맵 높이
+//     glm::ivec2 bearing;    // 비트맵 베어링
+//     uint advance;          // 다음 글리프까지의 이동 거리
+// };
+// std::map<uint32_t, BitmapGlyphData> bitmapGlyphMap;
 GLuint Shader_2d;
-void RenderGlyph(const BitmapGlyphData &glyph, float x, float y)
+uchar *word(uint node)
+{
+    // uchar *re1 = new uchar[1024];
+    uchar re1[4000]; // 스택에 고정 크기 할당
+
+    ushort nowPosi = 4;
+    if (node >= ttt && node < ttt + 256)
+    {
+        re1[nowPosi] = (uchar)(node - ttt);
+        nowPosi++;
+    }
+    else if (sizeRev(node, 0) > 0)
+    {
+        stack<uint> st;
+        vector<uint> index;
+        st.push(node);
+        index.push_back(0);
+
+        int ii = 0;
+        while (!st.empty() && ii < 4000)
+        {
+            ii++;
+            uint topNode = st.top();
+            vector<uint> szCR = sizeCoRe(topNode, 0);
+            if (szCR[1] == 6 * index.back())
+            {
+                if (st.size() == 1)
+                    break;
+                st.pop();
+                index.pop_back();
+                index.back()++;
+                continue;
+            }
+            uint startCoo = startCh(topNode, 0);
+            uint rev = charTouint(CoRe[topNode] + startCoo + 8 + szCR[0] + 6 * index.back());
+            if (rev != 41155)
+            {
+                st.push(rev);
+                index.push_back(0);
+            }
+            else
+            {
+                uchar chch = (uchar)(topNode - ttt);
+                re1[nowPosi] = chch;
+                nowPosi++;
+                st.pop();
+                index.pop_back();
+                if (!index.empty())
+                    index.back()++;
+            }
+        }
+        if (ii > 4000) // 오류 처리 logic은 while 문 밖으로 꺼내는 게 좋음
+        {
+            //Log(L"word Error! node: " + intToWString(node));
+        }
+    }
+    uchar *sizeRe = uintToBytes(nowPosi - 4);
+    re1[0] = sizeRe[0];
+    re1[1] = sizeRe[1];
+    re1[2] = sizeRe[2];
+    re1[3] = sizeRe[3];
+    delete[] sizeRe;
+    // 동적 배열에 필요한 크기만큼만 할당
+    uchar *result = new uchar[nowPosi];
+    std::copy(re1, re1 + nowPosi, result); // std::copy를 사용하여 re1의 내용을 result로 복사
+
+    return result;
+}
+uint ushortToNode(ushort charCode){
+    uchar *byte = ushortToBytes(charCode);
+    uint node1 = ttt + byte[0];
+    uint startCoo = charTouint(CoRe[node1] + 6);
+    uint sizeCoo = charTouint(CoRe[node1] + startCoo);
+    uint node2 = 0;
+    for (int i = 0; i < sizeCoo/6; i++){
+        node2 = charTouint(CoRe[node1] + startCoo + 4 + 6 * i);
+        uint startCoo2 = charTouint(CoRe[node2] + 6);
+        uint sizeCoo2 = charTouint(CoRe[node2] + startCoo2);
+        uint startRev = startCoo2 + 4 + sizeCoo2;
+        uint node3 = charTouint(CoRe[node2] + startRev + 10);
+        if (node3 == ttt + byte[1]){
+            break;
+        }
+    }
+    delete[] byte;
+    return node2;
+}
+void RenderGlyph(float x, float y, uint c)
 {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -586,7 +717,13 @@ void RenderGlyph(const BitmapGlyphData &glyph, float x, float y)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // 텍스처 데이터의 정렬 방식을 설정합니다. 반드시 필요!!(글리프 데이터의 너비가 2의 거듭제곱이 아닐 경우, 텍스처 데이터의 정렬 방식을 설정하지 않으면 텍스처가 깨집니다.)
 
     // 텍스처 이미지 업로드
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, glyph.width, glyph.height, 0, GL_RED, GL_UNSIGNED_BYTE, glyph.bitmap);
+    ushort dd = static_cast<ushort>(c);
+    uint node = ushortToNode(dd);
+    uchar *widthData = axis(node, 0, 3);
+    uint width = charTouint(widthData);
+    uint height = charTouint(widthData + 4);
+    //delete[] widthData;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, widthData + 20);
 
     // 텍스처 파라미터 설정
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -596,13 +733,13 @@ void RenderGlyph(const BitmapGlyphData &glyph, float x, float y)
 
     // 렌더링을 위한 쿼드 생성
     float vertices[6][4] = {
-        {x, y + glyph.height, 0.0f, 0.0f},
+        {x, y + height, 0.0f, 0.0f},
         {x, y, 0.0f, 1.0f},
-        {x + glyph.width, y, 1.0f, 1.0f},
+        {x + width, y, 1.0f, 1.0f},
 
-        {x, y + glyph.height, 0.0f, 0.0f},
-        {x + glyph.width, y, 1.0f, 1.0f},
-        {x + glyph.width, y + glyph.height, 1.0f, 0.0f}};
+        {x, y + height, 0.0f, 0.0f},
+        {x + width, y, 1.0f, 1.0f},
+        {x + width, y + height, 1.0f, 0.0f}};
 
     // VBO(버텍스 버퍼 객체) 및 VAO(버텍스 어레이 객체) 생성 및 바인딩
     GLuint VBO, VAO;
@@ -640,29 +777,37 @@ void RenderText(const std::string &text, float x, float y)
     std::u32string utf32Text = utf8ToUtf32(text);
     for (auto c : utf32Text)
     {
-        auto glyphIter = bitmapGlyphMap.find(c);
-        BitmapGlyphData glyph;
+        // auto glyphIter = bitmapGlyphMap.find(c);
+        // BitmapGlyphData glyph;
 
-        if (glyphIter != bitmapGlyphMap.end())
-        {
-            glyph = glyphIter->second;
-        }
-        else
-        {
-            // 글리프 데이터를 찾을 수 없는 경우, 물음표 글리프를 사용합니다.
-            LogStr.push_back(L"Glyph not found: " + intToWString(c));
-            auto questionMarkIter = bitmapGlyphMap.find(U'?');
-            if (questionMarkIter == bitmapGlyphMap.end())
-            {
-                throw std::runtime_error("Question mark glyph not found in bitmapGlyphMap");
-            }
-            glyph = questionMarkIter->second;
-        }
-        float xpos = x + glyph.bearing.x;
-        float ypos = y + glyph.bearing.y - glyph.height;
+        // if (glyphIter != bitmapGlyphMap.end())
+        // {
+        //     glyph = glyphIter->second;
+        // }
+        // else
+        // {
+        //     // 글리프 데이터를 찾을 수 없는 경우, 물음표 글리프를 사용합니다.
+        //     LogStr.push_back(L"Glyph not found: " + intToWString(c));
+        //     auto questionMarkIter = bitmapGlyphMap.find(U'?');
+        //     if (questionMarkIter == bitmapGlyphMap.end())
+        //     {
+        //         throw std::runtime_error("Question mark glyph not found in bitmapGlyphMap");
+        //     }
+        //     glyph = questionMarkIter->second;
+        // }
+        ushort dd = static_cast<ushort>(c);
+        uint node = ushortToNode(dd);
+        uchar *widthData = axis(node, 0, 3);
+        uint height = charTouint(widthData + 4);
+        uint adv = charTouint(widthData + 8);
+        uint bx = charTouint(widthData + 12);
+        uint by = charTouint(widthData + 16);
+        float xpos = x + bx;
+        float ypos = y + by - height;
         // OpenGL을 사용하여 비트맵을 화면에 렌더링합니다.
-        RenderGlyph(glyph, xpos, ypos);
-        x += (glyph.advance >> 6); // 비트맵의 다음 글리프 위치로 이동
+        RenderGlyph(xpos, ypos, c);
+
+        x += (adv >> 6); // 비트맵의 다음 글리프 위치로 이동
     }
     glUseProgram(0);
 }
@@ -699,13 +844,17 @@ float stringAdvance(const std::string &text)
 
     for (auto c : utf32Text)
     {
-        auto glyphIter = bitmapGlyphMap.find(c);
-        if (glyphIter == bitmapGlyphMap.end())
-        {
-            continue;
-        }
-        BitmapGlyphData glyph = glyphIter->second;
-        advance += (glyph.advance >> 6);
+                ushort dd = static_cast<ushort>(c);
+        uint node = ushortToNode(dd);
+        uchar *widthData = axis(node, 0, 3);
+        uint adv = charTouint(widthData + 8);
+        // auto glyphIter = bitmapGlyphMap.find(c);
+        // if (glyphIter == bitmapGlyphMap.end())
+        // {
+        //     continue;
+        // }
+        // BitmapGlyphData glyph = glyphIter->second;
+        advance += (adv >> 6);
     }
     return advance;
 }
@@ -769,6 +918,11 @@ std::vector<std::wstring> splitLinesW(const std::wstring &input)
 
     for (size_t end = 0; end <= input.size(); ++end)
     {
+                ushort dd = static_cast<ushort>(input[end]);
+        uint node = ushortToNode(dd);
+        uchar *widthData = axis(node, 0, 3);
+        uint adv = charTouint(widthData + 8);
+
         if (end == input.size() || input[end] == L'\n')
         {
             lines.push_back(input.substr(start, end - start));
@@ -777,7 +931,7 @@ std::vector<std::wstring> splitLinesW(const std::wstring &input)
         }
         else
         {
-            float advance = bitmapGlyphMap[input[end]].advance >> 6;
+            float advance = adv >> 6;
             width += advance;
             if (width > maxWidth)
             {
@@ -834,74 +988,6 @@ uchar *wstringToUChar(const std::wstring &str)
         result[index++] = static_cast<unsigned char>(ushort_c & 0xFF);
         result[index++] = static_cast<unsigned char>((ushort_c >> 8) & 0xFF);
     }
-
-    return result;
-}
-uchar *word(uint node)
-{
-    // uchar *re1 = new uchar[1024];
-    uchar re1[4000]; // 스택에 고정 크기 할당
-
-    ushort nowPosi = 4;
-    if (node >= ttt && node < ttt + 256)
-    {
-        re1[nowPosi] = (uchar)(node - ttt);
-        nowPosi++;
-    }
-    else if (sizeRev(node, 0) > 0)
-    {
-        stack<uint> st;
-        vector<uint> index;
-        st.push(node);
-        index.push_back(0);
-
-        int ii = 0;
-        while (!st.empty() && ii < 4000)
-        {
-            ii++;
-            uint topNode = st.top();
-            vector<uint> szCR = sizeCoRe(topNode, 0);
-            if (szCR[1] == 6 * index.back())
-            {
-                if (st.size() == 1)
-                    break;
-                st.pop();
-                index.pop_back();
-                index.back()++;
-                continue;
-            }
-            uint startCoo = startCh(topNode, 0);
-            uint rev = charTouint(CoRe[topNode] + startCoo + 8 + szCR[0] + 6 * index.back());
-            if (rev != 41155)
-            {
-                st.push(rev);
-                index.push_back(0);
-            }
-            else
-            {
-                uchar chch = (uchar)(topNode - ttt);
-                re1[nowPosi] = chch;
-                nowPosi++;
-                st.pop();
-                index.pop_back();
-                if (!index.empty())
-                    index.back()++;
-            }
-        }
-        if (ii > 4000) // 오류 처리 logic은 while 문 밖으로 꺼내는 게 좋음
-        {
-            Log(L"word Error! node: " + intToWString(node));
-        }
-    }
-    uchar *sizeRe = uintToBytes(nowPosi - 4);
-    re1[0] = sizeRe[0];
-    re1[1] = sizeRe[1];
-    re1[2] = sizeRe[2];
-    re1[3] = sizeRe[3];
-    delete[] sizeRe;
-    // 동적 배열에 필요한 크기만큼만 할당
-    uchar *result = new uchar[nowPosi];
-    std::copy(re1, re1 + nowPosi, result); // std::copy를 사용하여 re1의 내용을 result로 복사
 
     return result;
 }
@@ -1040,7 +1126,7 @@ bool areEqual(uchar *arr1, uchar *arr2, uint size)
     }
     return true;
 }
-uint firstToken(uchar *data, uint size)
+uint firstToken(uchar *data, uint size) // size 정보 포함해서 받아야 함
 {
     bool check2 = true;
     uint coord = 41155;
@@ -1057,7 +1143,7 @@ uint firstToken(uchar *data, uint size)
             if (areEqual(wordcd + 4, data, sizeWord)) // 기존 글자 존재할 경우 추가 글자 확인
             {
                 coord = cd;
-                if (sizeWord >= size)
+                if (sizeWord < size)
                 {
                     check2 = true;
                 }
@@ -1432,82 +1518,70 @@ void move(int numTo, uint user)
         cCh[user] = charToushort(CoRe[tN] + startCoo + 12 + szC + 6 * temp);
     }
 }
-void serializeBitmapGlyphData(std::ostream &out, const BitmapGlyphData &data)
-{
-    // Write bitmap size
-    uint32_t bitmapSize = data.width * data.height;
-    out.write(reinterpret_cast<const char *>(&bitmapSize), sizeof(bitmapSize));
-
-    // Write bitmap data
-    out.write(reinterpret_cast<const char *>(data.bitmap), bitmapSize);
-
-    // Write other data
-    out.write(reinterpret_cast<const char *>(&data.width), sizeof(data.width));
-    out.write(reinterpret_cast<const char *>(&data.height), sizeof(data.height));
-    out.write(reinterpret_cast<const char *>(&data.bearing), sizeof(data.bearing));
-    out.write(reinterpret_cast<const char *>(&data.advance), sizeof(data.advance));
-}
-void deserializeBitmapGlyphData(std::istream &in, BitmapGlyphData &data)
-{
-    // Read bitmap size
-    uint32_t bitmapSize;
-    in.read(reinterpret_cast<char *>(&bitmapSize), sizeof(bitmapSize));
-
-    // Allocate memory for bitmap and read bitmap data
-    data.bitmap = new unsigned char[bitmapSize];
-    in.read(reinterpret_cast<char *>(data.bitmap), bitmapSize);
-
-    // Read other data
-    in.read(reinterpret_cast<char *>(&data.width), sizeof(data.width));
-    in.read(reinterpret_cast<char *>(&data.height), sizeof(data.height));
-    in.read(reinterpret_cast<char *>(&data.bearing), sizeof(data.bearing));
-    in.read(reinterpret_cast<char *>(&data.advance), sizeof(data.advance));
-}
-void saveMapToFile(const std::string &filename, const std::map<uint32_t, BitmapGlyphData> &map)
-{
-    std::ofstream outFile(filename, std::ios::binary);
-    if (!outFile.is_open())
-    {
-        throw std::runtime_error("Unable to open file for writing");
-    }
-
-    for (const auto &pair : map)
-    {
-        // Write key
-        outFile.write(reinterpret_cast<const char *>(&pair.first), sizeof(pair.first));
-
-        // Serialize and write value
-        serializeBitmapGlyphData(outFile, pair.second);
-    }
-
-    outFile.close();
-}
-void loadMapFromFile(const std::string &filename, std::map<uint32_t, BitmapGlyphData> &map)
-{
-    std::ifstream inFile(filename, std::ios::binary);
-    if (!inFile.is_open())
-    {
-        throw std::runtime_error("Unable to open file for reading");
-    }
-
-    while (!inFile.eof())
-    {
-        uint32_t key;
-        BitmapGlyphData data;
-
-        // Read key
-        inFile.read(reinterpret_cast<char *>(&key), sizeof(key));
-        if (inFile.eof())
-            break;
-
-        // Deserialize and read value
-        deserializeBitmapGlyphData(inFile, data);
-
-        map[key] = data;
-    }
-
-    inFile.close();
-}
+// void serializeBitmapGlyphData(std::ostream &out, const BitmapGlyphData &data)
+// {
+//     // Write bitmap size
+//     uint32_t bitmapSize = data.width * data.height;
+//     out.write(reinterpret_cast<const char *>(&bitmapSize), sizeof(bitmapSize));
+//     // Write bitmap data
+//     out.write(reinterpret_cast<const char *>(data.bitmap), bitmapSize);
+//     // Write other data
+//     out.write(reinterpret_cast<const char *>(&data.width), sizeof(data.width));
+//     out.write(reinterpret_cast<const char *>(&data.height), sizeof(data.height));
+//     out.write(reinterpret_cast<const char *>(&data.bearing), sizeof(data.bearing));
+//     out.write(reinterpret_cast<const char *>(&data.advance), sizeof(data.advance));
+// }
+// void deserializeBitmapGlyphData(std::istream &in, BitmapGlyphData &data)
+// {
+//     // Read bitmap size
+//     uint32_t bitmapSize;
+//     in.read(reinterpret_cast<char *>(&bitmapSize), sizeof(bitmapSize));
+//     // Allocate memory for bitmap and read bitmap data
+//     data.bitmap = new unsigned char[bitmapSize];
+//     in.read(reinterpret_cast<char *>(data.bitmap), bitmapSize);
+//     // Read other data
+//     in.read(reinterpret_cast<char *>(&data.width), sizeof(data.width));
+//     in.read(reinterpret_cast<char *>(&data.height), sizeof(data.height));
+//     in.read(reinterpret_cast<char *>(&data.bearing), sizeof(data.bearing));
+//     in.read(reinterpret_cast<char *>(&data.advance), sizeof(data.advance));
+// }
+// void saveMapToFile(const std::string &filename, const std::map<uint32_t, BitmapGlyphData> &map)
+// {
+//     std::ofstream outFile(filename, std::ios::binary);
+//     if (!outFile.is_open())
+//     {
+//         throw std::runtime_error("Unable to open file for writing");
+//     }
+//     for (const auto &pair : map)
+//     {
+//         // Write key
+//         outFile.write(reinterpret_cast<const char *>(&pair.first), sizeof(pair.first));
+//         // Serialize and write value
+//         serializeBitmapGlyphData(outFile, pair.second);
+//     }
+//     outFile.close();
+// }
+// void loadMapFromFile(const std::string &filename, std::map<uint32_t, BitmapGlyphData> &map)
+// {
+//     std::ifstream inFile(filename, std::ios::binary);
+//     if (!inFile.is_open())
+//     {
+//         throw std::runtime_error("Unable to open file for reading");
+//     }
+//     while (!inFile.eof())
+//     {
+//         uint32_t key;
+//         BitmapGlyphData data;
+//         // Read key
+//         inFile.read(reinterpret_cast<char *>(&key), sizeof(key));
+//         if (inFile.eof())
+//             break;
+//         // Deserialize and read value
+//         deserializeBitmapGlyphData(inFile, data);
+//         map[key] = data;
+//     }
+//     inFile.close();
+// }
 void save(string directory)
 {
     auto start = std::chrono::high_resolution_clock::now();
@@ -1539,7 +1613,7 @@ void save(string directory)
         }
     }
     file2.close();
-    saveMapToFile(directory + "bitmapGlyphMap.bin", bitmapGlyphMap);
+    //saveMapToFile(directory + "bitmapGlyphMap.bin", bitmapGlyphMap);
     auto end = std::chrono::high_resolution_clock::now();
 
     // 경과 시간 계산 (밀리초 단위)
@@ -2186,47 +2260,61 @@ std::string codepointToUtf8(unsigned int cp)
 std::string printBitmapGlyphData(uint32_t unicodePoint)
 {
     std::stringstream output;
-
-    auto it = bitmapGlyphMap.find(unicodePoint);
-    if (it != bitmapGlyphMap.end())
-    {
-        BitmapGlyphData &data = it->second;
-
+                ushort dd = static_cast<ushort>(unicodePoint);
+        uint node = ushortToNode(dd);
+        uchar *widthData = axis(node, 0, 3);
+        uint width = charTouint(widthData);
+        uint height = charTouint(widthData + 4);
+        uint adv = charTouint(widthData + 8);
+        uint bearingX = charTouint(widthData + 12);
+        uint bearingY = charTouint(widthData + 16);
         output << "Bitmap Glyph Data:" << codepointToUtf8(unicodePoint) << std::endl;
-        output << "Width: " << data.width << std::endl;
-        output << "Height: " << data.height << std::endl;
-        output << "Bearing: (" << data.bearing.x << ", " << data.bearing.y << ")" << std::endl;
-        output << "Advance: " << data.advance << std::endl;
-        output << "Bitmap Data: " << bitmapToHexString(data.bitmap, data.width * data.height) << std::endl;
-    }
-    else
-    {
-        output << "No glyph data found for unicode point: " << unicodePoint << std::endl;
-    }
+        output << "Width: " << width << std::endl;
+        output << "Height: " << height << std::endl;
+        output << "Bearing: (" << bearingX << ", " << bearingY << ")" << std::endl;
+        output << "Advance: " << adv << std::endl;
+        output << "Bitmap Data: " << bitmapToHexString(widthData + 20, width * height) << std::endl;
+
+    // auto it = bitmapGlyphMap.find(unicodePoint);
+    // if (it != bitmapGlyphMap.end())
+    // {
+    //     BitmapGlyphData &data = it->second;
+
+    //     output << "Bitmap Glyph Data:" << codepointToUtf8(unicodePoint) << std::endl;
+    //     output << "Width: " << data.width << std::endl;
+    //     output << "Height: " << data.height << std::endl;
+    //     output << "Bearing: (" << data.bearing.x << ", " << data.bearing.y << ")" << std::endl;
+    //     output << "Advance: " << data.advance << std::endl;
+    //     output << "Bitmap Data: " << bitmapToHexString(data.bitmap, data.width * data.height) << std::endl;
+    // }
+    // else
+    // {
+    //     output << "No glyph data found for unicode point: " << unicodePoint << std::endl;
+    // }
 
     return output.str();
 }
-void modifyGlyphData(uint32_t unicodePoint, const BitmapGlyphData &newData)
-{
-    // 해당 유니코드 포인트의 글리프 데이터를 찾습니다.
-    auto it = bitmapGlyphMap.find(unicodePoint);
-    if (it != bitmapGlyphMap.end())
-    {
-        // 글리프 데이터를 업데이트합니다.
-        delete[] it->second.bitmap;
-        it->second.bitmap = newData.bitmap;
-        it->second.width = newData.width;
-        it->second.height = newData.height;
-        it->second.bearing = newData.bearing;
-        it->second.advance = newData.advance;
-    }
-    else
-    {
-        // 해당 유니코드 포인트의 글리프 데이터가 존재하지 않는 경우
-        // 새로운 글리프 데이터를 맵에 추가합니다.
-        bitmapGlyphMap[unicodePoint] = newData;
-    }
-}
+// void modifyGlyphData(uint32_t unicodePoint, const BitmapGlyphData &newData)
+// {
+//     // 해당 유니코드 포인트의 글리프 데이터를 찾습니다.
+//     auto it = bitmapGlyphMap.find(unicodePoint);
+//     if (it != bitmapGlyphMap.end())
+//     {
+//         // 글리프 데이터를 업데이트합니다.
+//         delete[] it->second.bitmap;
+//         it->second.bitmap = newData.bitmap;
+//         it->second.width = newData.width;
+//         it->second.height = newData.height;
+//         it->second.bearing = newData.bearing;
+//         it->second.advance = newData.advance;
+//     }
+//     else
+//     {
+//         // 해당 유니코드 포인트의 글리프 데이터가 존재하지 않는 경우
+//         // 새로운 글리프 데이터를 맵에 추가합니다.
+//         bitmapGlyphMap[unicodePoint] = newData;
+//     }
+// }
 void AddStringToNode(const string &str, uint node, ushort ch)
 {
     wstring wstr = utf8ToWstring(str);
@@ -2463,8 +2551,8 @@ void submit()
                 glm::ivec2 bearing(bearingX, bearingY);
                 uint advance = stringToUint(spl[7]);
                 uchar *bitmap = hexStringToBitmap(spl[8]);
-                BitmapGlyphData newData = {bitmap, width, height, bearing, advance};
-                modifyGlyphData(unicode, newData);
+                // BitmapGlyphData newData = {bitmap, width, height, bearing, advance};
+                // modifyGlyphData(unicode, newData);
             }
         }
     }
@@ -4108,6 +4196,34 @@ void Setup2DProjection(int screenWidth, int screenHeight)
     glUniformMatrix4fv(glGetUniformLocation(Shader_2d, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
     glUseProgram(0);
 }
+std::string unicodeToUtf8(unsigned int codepoint) {
+    std::string out;
+
+    if (codepoint <= 0x7F) {
+        // 1바이트 UTF-8 문자
+        out += static_cast<char>(codepoint);
+    } else if (codepoint <= 0x07FF) {
+        // 2바이트 UTF-8 문자
+        out += static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F));
+        out += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0xFFFF) {
+        // 3바이트 UTF-8 문자
+        out += static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F));
+        out += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0x10FFFF) {
+        // 4바이트 UTF-8 문자
+        out += static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07));
+        out += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else {
+        // 유효하지 않은 유니코드 포인트
+        throw std::invalid_argument("Invalid Unicode codepoint");
+    }
+
+    return out;
+}
 int main(int argc, char **argv)
 {
     auto start = std::chrono::high_resolution_clock::now();
@@ -4171,29 +4287,30 @@ int main(int argc, char **argv)
         std::cerr << "GLEW 초기화에 실패했습니다." << std::endl;
         return -1;
     }
-    loadMapFromFile("/home/yonghwan/test/Save_and_BackUp/BackUp0/bitmapGlyphMap.bin", bitmapGlyphMap);
+    //loadMapFromFile("/home/yonghwan/test/Save_and_BackUp/BackUp0/bitmapGlyphMap.bin", bitmapGlyphMap);
+    uchar temp2[1]; //없으면 렌더링 오류 생김(이유는 모르겠음...)
 
-
-    for (const auto i : bitmapGlyphMap)
-    {
-        uchar *temp = uintToBytes(i.first);
-        uint node = firstToken(temp, 2);
-        delete[] temp;
-        if (i.first > 256){
-            uint iii = 0;
-        }
-        uchar temp2[5 + i.second.width * i.second.height];
-        temp2[0] = i.second.width;
-        temp2[1] = i.second.height;
-        temp2[2] = i.second.advance >> 6;
-        temp2[3] = i.second.bearing.x;
-        temp2[4] = i.second.bearing.y;
-        for (int ii = 0; ii < i.second.width * i.second.height; ii++)
-        {
-            temp2[5 + ii] = i.second.bitmap[ii];
-        }
-        
-    }
+    // for (const auto i : bitmapGlyphMap)
+    // {
+    //     ushort charCode = static_cast<ushort>(i.first);
+    //     uint node = ushortToNode(charCode);
+    //     uchar temp2[5 + i.second.width * i.second.height];
+    //     temp2[0] = i.second.width;
+    //     temp2[1] = i.second.height;
+    //     temp2[2] = i.second.advance >> 6;
+    //     temp2[3] = i.second.bearing.x;
+    //     temp2[4] = i.second.bearing.y;
+    //     for (int ii = 0; ii < i.second.width * i.second.height; ii++)
+    //     {
+    //         temp2[5 + ii] = i.second.bitmap[ii];
+    //     }
+    //     // uchar *temp4 = i.second.bitmap;
+    //     //uchar *temp5 = i.second.bitmap;
+    //     // delete[] temp6;
+    //     //pushAxis3(node, 0, i.second.bitmap);
+    //     // delete[] temp4;
+    //     //delete[] temp5;
+    // }
 
     double lastTime = glfwGetTime();
     int numberOfFrames = 0;
@@ -4477,9 +4594,16 @@ int main(int argc, char **argv)
                 }
 
                 // float highlightX = 200 + font.Advance(linesOfEditControl[i].substr(0, lineStart).c_str());
-                float highlightX = 200 + bitmapGlyphMap[linesOfEditControl[i][lineStart]].advance;
+                ushort dd = static_cast<ushort>(linesOfEditControl[i][lineStart]);
+                uint node = ushortToNode(dd);
+                uchar *widthData = axis(node, 0, 3);
+                uint adv = charTouint(widthData + 8);
+
+                // float highlightX = 200 + bitmapGlyphMap[linesOfEditControl[i][lineStart]].advance;
+                float highlightX = 200 + adv;
                 // float highlightWidth = font.Advance(linesOfEditControl[i].substr(lineStart, lineEnd - lineStart).c_str());
-                float highlightWidth = bitmapGlyphMap[linesOfEditControl[i][lineStart]].advance;
+                // float highlightWidth = bitmapGlyphMap[linesOfEditControl[i][lineStart]].advance;
+                float highlightWidth = adv;
 
                 float highlightHeight = lineHeight;
                 float highlightY = 20 + (lsize - 1 - i) * lineHeight;
